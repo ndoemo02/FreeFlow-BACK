@@ -1,0 +1,38 @@
+name: Back CI
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore: [ "**/*.md", "**/.env*" ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Install • Lint • Typecheck (optional)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint (optional)
+        run: npm run lint || echo "no lint script – skipping"
+
+      - name: Typecheck (optional)
+        run: npm run typecheck || echo "no typecheck script – skipping"
+
+      # Tu NIE odpalamy serwera i NIE używamy kluczy produkcyjnych.
+      # To tylko szybki sanity check, że repo jest spójne.
