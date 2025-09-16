@@ -1,0 +1,6 @@
+# Backend
+/freeflow-backend/ @Build-Backend
+# Frontend
+/freeflow-frontend/ @Build-Frontend
+# Wszystko inne
+* @owner
