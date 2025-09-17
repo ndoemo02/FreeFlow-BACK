@@ -1,0 +1,62 @@
+name: backend-ci
+
+on:
+  pull_request:
+    paths:
+      - 'freeflow-backend/**'
+      - '.github/workflows/backend.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'freeflow-backend/**'
+      - '.github/workflows/backend.yml'
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: freeflow-backend
+    env:
+      NODE_ENV: test
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: freeflow-backend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint (optional)
+        run: npm run lint --if-present
+
+      - name: Build (optional)
+        run: npm run build --if-present
+
+      - name: Start server in background
+        run: |
+          node dev-server.js &
+          echo $! > /tmp/server.pid
+          npx wait-on -t 30000 http://localhost:3001/api/health
+
+      - name: Smoke: /api/health
+        run: |
+          curl -fsS http://localhost:3001/api/health | jq .
+
+      - name: Smoke: /api/places
+        run: |
+          curl -fsS "http://localhost:3001/api/places?query=pizza" | jq . | head -n 50
+
+      - name: Stop server
+        if: always()
+        run: |
+          kill -9 $(cat /tmp/server.pid) || true
