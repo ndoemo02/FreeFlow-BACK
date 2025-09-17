@@ -1,0 +1,412 @@
+openapi: 3.0.3
+info:
+  title: FreeFlow Backend API
+  description: API for FreeFlow voice-to-order system
+  version: 1.0.0
+  contact:
+    name: FreeFlow Team
+    email: support@freeflow.com
+servers:
+  - url: http://localhost:3002
+    description: Development server
+  - url: https://freeflow-backend.vercel.app
+    description: Production server
+
+paths:
+  /api/health:
+    get:
+      summary: Health check endpoint
+      description: Returns the health status of the API service
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  service:
+                    type: string
+                    example: "freeflow-backend"
+                  ts:
+                    type: string
+                    format: date-time
+                    example: "2025-09-17T04:54:24.362Z"
+              example:
+                status: "ok"
+                service: "freeflow-backend"
+                ts: "2025-09-17T04:54:24.362Z"
+
+  /api/places:
+    get:
+      summary: Search for places
+      description: Search for places using Google Places API
+      tags:
+        - Places
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Search query for places
+          schema:
+            type: string
+          example: "pizza"
+        - name: n
+          in: query
+          required: false
+          description: Number of results to return (1-10)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 3
+          example: 3
+        - name: language
+          in: query
+          required: false
+          description: Language code for results
+          schema:
+            type: string
+            default: "pl"
+          example: "pl"
+        - name: lat
+          in: query
+          required: false
+          description: Latitude for location-based search
+          schema:
+            type: number
+            format: float
+          example: 50.2649
+        - name: lng
+          in: query
+          required: false
+          description: Longitude for location-based search
+          schema:
+            type: number
+            format: float
+          example: 19.0238
+        - name: radius
+          in: query
+          required: false
+          description: Search radius in meters (100-50000)
+          schema:
+            type: integer
+            minimum: 100
+            maximum: 50000
+            default: 3000
+          example: 3000
+        - name: type
+          in: query
+          required: false
+          description: Place type filter
+          schema:
+            type: string
+            enum: [restaurant, lodging, taxi_stand]
+          example: "restaurant"
+      responses:
+        '200':
+          description: Places found successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "OK"
+                  total:
+                    type: integer
+                    description: Total number of results found
+                    example: 20
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          description: Name of the place
+                          example: "Papa Luigi Pizza"
+                        rating:
+                          type: number
+                          format: float
+                          description: Average rating (0-5)
+                          example: 4.9
+                        votes:
+                          type: integer
+                          description: Number of user ratings
+                          example: 55
+                        address:
+                          type: string
+                          description: Formatted address
+                          example: "Bytomska 40A, 41-103 Siemianowice Śląskie, Polska"
+                        place_id:
+                          type: string
+                          description: Google Places ID
+                          example: "ChIJfc0nkk3TFkcR3YXLonM5dgY"
+              example:
+                status: "OK"
+                total: 20
+                results:
+                  - name: "Papa Luigi Pizza"
+                    rating: 4.9
+                    votes: 55
+                    address: "Bytomska 40A, 41-103 Siemianowice Śląskie, Polska"
+                    place_id: "ChIJfc0nkk3TFkcR3YXLonM5dgY"
+                  - name: "Bar Orientalny"
+                    rating: 4.7
+                    votes: 123
+                    address: "Główna 15, 41-103 Siemianowice Śląskie, Polska"
+                    place_id: "ChIJabc123def456"
+        '400':
+          description: Bad request - missing required parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Missing required parameter: query"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Missing GOOGLE_MAPS_API_KEY"
+        '502':
+          description: Upstream error from Google Places API
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Upstream error: REQUEST_DENIED"
+        '504':
+          description: Request timeout
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Request timeout - Google Places API nie odpowiada"
+
+  /api/agent:
+    post:
+      summary: Process voice command
+      description: Process voice command through AI agent
+      tags:
+        - AI Agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              properties:
+                text:
+                  type: string
+                  description: Voice command text to process
+                  example: "Chcę zamówić pizzę margherita"
+              example:
+                text: "Chcę zamówić pizzę margherita"
+      responses:
+        '200':
+          description: Command processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  reply:
+                    type: string
+                    description: AI agent response
+                    example: "Znalazłem kilka pizzerii w Twojej okolicy. Którą wybierasz?"
+              example:
+                ok: true
+                reply: "Znalazłem kilka pizzerii w Twojej okolicy. Którą wybierasz?"
+        '400':
+          description: Bad request - missing text parameter
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Missing required parameter: text"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "AI processing failed"
+
+  /api/tts:
+    post:
+      summary: Text-to-Speech conversion
+      description: Convert text to speech audio
+      tags:
+        - TTS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              properties:
+                text:
+                  type: string
+                  description: Text to convert to speech
+                  example: "Twoje zamówienie zostało przyjęte"
+              example:
+                text: "Twoje zamówienie zostało przyjęte"
+      responses:
+        '200':
+          description: TTS conversion successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  url:
+                    type: string
+                    description: URL to generated audio file
+                    example: "https://freeflow-backend.vercel.app/api/tts/audio/abc123.mp3"
+              example:
+                ok: true
+                url: "https://freeflow-backend.vercel.app/api/tts/audio/abc123.mp3"
+        '400':
+          description: Bad request - missing text parameter
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Missing required parameter: text"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "TTS generation failed"
+
+  /api/gpt:
+    post:
+      summary: GPT completion
+      description: Get completion from GPT model
+      tags:
+        - AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prompt
+              properties:
+                prompt:
+                  type: string
+                  description: Prompt for GPT completion
+                  example: "Napisz krótki opis pizzy margherita"
+              example:
+                prompt: "Napisz krótki opis pizzy margherita"
+      responses:
+        '200':
+          description: GPT completion successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  answer:
+                    type: string
+                    description: GPT completion response
+                    example: "Pizza Margherita to klasyczna włoska pizza z sosem pomidorowym, mozzarellą i świeżą bazylią."
+              example:
+                ok: true
+                answer: "Pizza Margherita to klasyczna włoska pizza z sosem pomidorowym, mozzarellą i świeżą bazylią."
+        '400':
+          description: Bad request - missing prompt parameter
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Missing required parameter: prompt"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "GPT processing failed"
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        code:
+          type: integer
+          description: Error code
+        details:
+          type: string
+          description: Additional error details
+
+tags:
+  - name: System
+    description: System health and status endpoints
+  - name: Places
+    description: Places search and discovery
+  - name: AI Agent
+    description: AI agent for voice command processing
+  - name: TTS
+    description: Text-to-Speech conversion
+  - name: AI
+    description: AI model completions
