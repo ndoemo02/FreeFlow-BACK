@@ -1,0 +1,320 @@
+{
+  "name": "FreeFlow API Monitoring",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "value": "0 3 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Nightly Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.FREEFLOW_API_BASE}}/api/health",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "health-check",
+      "name": "Health Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.FREEFLOW_API_BASE}}/api/places",
+        "options": {
+          "timeout": 30000,
+          "qs": {
+            "query": "pizza",
+            "n": 2,
+            "language": "pl"
+          }
+        }
+      },
+      "id": "places-test",
+      "name": "Places Test",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.FREEFLOW_API_BASE}}/api/agent",
+        "options": {
+          "timeout": 30000,
+          "body": {
+            "text": "ping"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        }
+      },
+      "id": "agent-test",
+      "name": "Agent Test",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "health-status",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "health-http-status",
+              "leftValue": "={{$json.statusCode}}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "health-validator",
+      "name": "Health Validator",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "places-status",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "OK",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "places-http-status",
+              "leftValue": "={{$json.statusCode}}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "places-validator",
+      "name": "Places Validator",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "agent-ok",
+              "leftValue": "={{$json.ok}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "id": "agent-http-status",
+              "leftValue": "={{$json.statusCode}}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "agent-validator",
+      "name": "Agent Validator",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_USER}}",
+        "toEmail": "admin@freeflow.com",
+        "subject": "🚨 FreeFlow API Alert - {{$now.format('YYYY-MM-DD HH:mm:ss')}}",
+        "message": "API Health Check Failed\\n\\nDetails:\\n- Health: {{$('Health Check').item.json.status}}\\n- Places: {{$('Places Test').item.json.status}}\\n- Agent: {{$('Agent Test').item.json.ok}}\\n\\nTime: {{$now.format('YYYY-MM-DD HH:mm:ss')}}",
+        "options": {}
+      },
+      "id": "email-alert",
+      "name": "Email Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "webhookUrl": "={{$env.GITHUB_WEBHOOK_URL}}",
+        "httpMethod": "POST",
+        "options": {
+          "body": {
+            "event_type": "api_health_check_failed",
+            "client_payload": {
+              "timestamp": "={{$now.toISO()}}",
+              "health_status": "={{$('Health Check').item.json.status}}",
+              "places_status": "={{$('Places Test').item.json.status}}",
+              "agent_status": "={{$('Agent Test').item.json.ok}}"
+            }
+          }
+        }
+      },
+      "id": "github-webhook",
+      "name": "GitHub Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 400]
+    }
+  ],
+  "connections": {
+    "Nightly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Health Check",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Places Test",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Agent Test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Check": {
+      "main": [
+        [
+          {
+            "node": "Health Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Places Test": {
+      "main": [
+        [
+          {
+            "node": "Places Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent Test": {
+      "main": [
+        [
+          {
+            "node": "Agent Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Validator": {
+      "main": [
+        [
+          {
+            "node": "Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Places Validator": {
+      "main": [
+        [
+          {
+            "node": "Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent Validator": {
+      "main": [
+        [
+          {
+            "node": "Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-09-17T08:00:00.000Z",
+  "versionId": "1"
+}

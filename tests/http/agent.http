@@ -1,0 +1,107 @@
+### Agent Test - Basic Command
+POST http://localhost:3002/api/agent
+Content-Type: application/json
+
+{
+  "text": "Chcę zamówić pizzę margherita"
+}
+
+### Agent Test - Complex Command
+POST http://localhost:3002/api/agent
+Content-Type: application/json
+
+{
+  "text": "Znajdź mi restaurację z kebabem w centrum miasta"
+}
+
+### Agent Test - Validation
+POST http://localhost:3002/api/agent
+Content-Type: application/json
+
+{
+  "text": "ping"
+}
+
+> {%
+client.test("Agent returns 200", function() {
+    client.assert(response.status === 200, "Expected status 200, got " + response.status);
+});
+
+client.test("Agent returns valid JSON", function() {
+    client.assert(response.contentType.mimeType === "application/json", "Expected JSON response");
+});
+
+client.test("Agent has required fields", function() {
+    const data = response.body;
+    client.assert(typeof data.ok === "boolean", "Expected ok boolean field");
+    client.assert(typeof data.reply === "string", "Expected reply string field");
+});
+
+client.test("Agent response time is acceptable", function() {
+    client.assert(response.responseTime < 10000, "Response time should be under 10 seconds");
+});
+%}
+
+### Agent Test - Error (Missing Text)
+POST http://localhost:3002/api/agent
+Content-Type: application/json
+
+{
+  "prompt": "test"
+}
+
+> {%
+client.test("Agent without text returns error", function() {
+    client.assert(response.status >= 400, "Expected error status for missing text");
+});
+%}
+
+### TTS Test
+POST http://localhost:3002/api/tts
+Content-Type: application/json
+
+{
+  "text": "Twoje zamówienie zostało przyjęte"
+}
+
+> {%
+client.test("TTS returns 200", function() {
+    client.assert(response.status === 200, "Expected status 200, got " + response.status);
+});
+
+client.test("TTS returns valid JSON", function() {
+    client.assert(response.contentType.mimeType === "application/json", "Expected JSON response");
+});
+
+client.test("TTS has required fields", function() {
+    const data = response.body;
+    client.assert(typeof data.ok === "boolean", "Expected ok boolean field");
+    if (data.ok) {
+        client.assert(typeof data.url === "string", "Expected url string field when ok=true");
+    }
+});
+%}
+
+### GPT Test
+POST http://localhost:3002/api/gpt
+Content-Type: application/json
+
+{
+  "prompt": "Napisz krótki opis pizzy margherita"
+}
+
+> {%
+client.test("GPT returns 200", function() {
+    client.assert(response.status === 200, "Expected status 200, got " + response.status);
+});
+
+client.test("GPT returns valid JSON", function() {
+    client.assert(response.contentType.mimeType === "application/json", "Expected JSON response");
+});
+
+client.test("GPT has required fields", function() {
+    const data = response.body;
+    client.assert(typeof data.ok === "boolean", "Expected ok boolean field");
+    client.assert(typeof data.answer === "string", "Expected answer string field");
+});
+%}

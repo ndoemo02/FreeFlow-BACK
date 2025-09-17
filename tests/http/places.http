@@ -1,0 +1,67 @@
+### Places Search - Basic Query
+GET http://localhost:3002/api/places?query=pizza
+Accept: application/json
+
+### Places Search - With Parameters
+GET http://localhost:3002/api/places?query=restauracja&n=3&language=pl
+Accept: application/json
+
+### Places Search - Location Based
+GET http://localhost:3002/api/places?query=kebab&lat=50.2649&lng=19.0238&radius=2000
+Accept: application/json
+
+### Places Search - Type Filter
+GET http://localhost:3002/api/places?query=hotel&type=lodging&n=2
+Accept: application/json
+
+### Places Search - Test Validation
+GET http://localhost:3002/api/places?query=pizza&n=3&language=pl
+Accept: application/json
+
+> {%
+client.test("Places search returns 200", function() {
+    client.assert(response.status === 200, "Expected status 200, got " + response.status);
+});
+
+client.test("Places search returns valid JSON", function() {
+    client.assert(response.contentType.mimeType === "application/json", "Expected JSON response");
+});
+
+client.test("Places search has required structure", function() {
+    const data = response.body;
+    client.assert(data.status === "OK", "Expected status 'OK', got " + data.status);
+    client.assert(Array.isArray(data.results), "Expected results array");
+    client.assert(typeof data.total === "number", "Expected total number");
+});
+
+client.test("Places results have required fields", function() {
+    const data = response.body;
+    if (data.results.length > 0) {
+        const place = data.results[0];
+        client.assert(place.name, "Expected name field");
+        client.assert(typeof place.rating === "number", "Expected rating number");
+        client.assert(typeof place.votes === "number", "Expected votes number");
+        client.assert(place.address, "Expected address field");
+        client.assert(place.place_id, "Expected place_id field");
+    }
+});
+
+client.test("Places search respects limit parameter", function() {
+    const data = response.body;
+    client.assert(data.results.length <= 3, "Expected max 3 results, got " + data.results.length);
+});
+
+client.test("Places search response time is acceptable", function() {
+    client.assert(response.responseTime < 5000, "Response time should be under 5 seconds");
+});
+%}
+
+### Places Search - Error Test (Missing Query)
+GET http://localhost:3002/api/places
+Accept: application/json
+
+> {%
+client.test("Places search without query returns error", function() {
+    client.assert(response.status >= 400, "Expected error status for missing query");
+});
+%}
