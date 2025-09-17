@@ -2,7 +2,7 @@
 
 Voice-to-order system backend API built with Node.js and Express.
 
-## 🚀 Quick Start
+## 🚀 Quick Start!
 
 ### Prerequisites
 - Node.js 20+ 
@@ -207,4 +207,5 @@ MIT License - see LICENSE file for details.
 - **Issues:** GitHub Issues
 - **Documentation:** [docs/](docs/)
 - **API Reference:** [OpenAPI Spec](docs/openapi.yaml)
+
 - **Test UI:** `http://localhost:3002/index-tester.html`
