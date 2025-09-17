@@ -1,4 +1,4 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: FreeFlow Backend API
   description: API for FreeFlow voice-to-order system
@@ -27,19 +27,19 @@ paths:
               schema:
                 type: object
                 properties:
-                  status:
+                  ok:
+                    type: boolean
+                    example: true
+                  env:
                     type: string
-                    example: "ok"
-                  service:
-                    type: string
-                    example: "freeflow-backend"
+                    example: "development"
                   ts:
                     type: string
                     format: date-time
                     example: "2025-09-17T04:54:24.362Z"
               example:
-                status: "ok"
-                service: "freeflow-backend"
+                ok: true
+                env: "development"
                 ts: "2025-09-17T04:54:24.362Z"
 
   /api/places:

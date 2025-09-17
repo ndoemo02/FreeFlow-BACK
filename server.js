@@ -1,8 +1,12 @@
+import dotenv from 'dotenv';
 import express from 'express';
 import { createServer } from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+// Load environment variables
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,6 +67,10 @@ app.get('/', (req, res) => {
     endpoints: apiFiles.map(file => `/api/${path.basename(file, '.js')}`)
   });
 });
+
+// Diagnostyka kluczy API (ostatnie 4 znaki)
+console.log("GMAPS ****" + (process.env.GOOGLE_MAPS_API_KEY||"").slice(-4));
+console.log("OPENAI ****" + (process.env.OPENAI_API_KEY||"").slice(-4));
 
 const PORT = process.env.PORT || 3002;
 server.listen(PORT, () => {

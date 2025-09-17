@@ -1,6 +1,8 @@
 // /api/gpt.js
 // Asystent FreeFlow – krótkie odpowiedzi PL
 
+import fetch from 'node-fetch';
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');

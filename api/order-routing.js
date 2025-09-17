@@ -1,10 +1,10 @@
 // /api/order-routing.js — endpoint do kierowania zamówień do restauracji
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SECRET_KEY
-);
+const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = process.env.SUPABASE_URL && service 
+  ? createClient(process.env.SUPABASE_URL, service)
+  : null;
 
 export default async function handler(req, res) {
   // CORS headers
@@ -25,6 +25,14 @@ export default async function handler(req, res) {
   }
 
   try {
+    if (!supabase) {
+      return res.status(500).json({
+        ok: false,
+        error: "SUPABASE_NOT_CONFIGURED",
+        message: "Supabase nie jest skonfigurowany"
+      });
+    }
+
     const {
       customer_id,
       order_items,

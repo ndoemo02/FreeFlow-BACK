@@ -1,5 +1,8 @@
 // /api/tts.js
-// Serverless TTS (OpenAI tts-1) → MP3
+// Google Cloud Text-to-Speech endpoint with caching
+import fetch from 'node-fetch';
+import { generateCacheKey, getCachedAudio, cacheAudio } from '../lib/tts-cache.js';
+
 export default async function handler(req, res) {
   // CORS
   if (req.method === 'OPTIONS') {
@@ -13,47 +16,74 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
   try {
-    const { text, voice = 'alloy', format = 'mp3' } = req.body || {};
+    const { text, voice_id = 'pl-PL-Wavenet-D', voice_settings = {} } = req.body || {};
+    
     if (!text || !text.trim()) {
       return res.status(400).json({ error: 'Missing "text"' });
     }
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+
+    if (!process.env.GOOGLE_TTS_API_KEY) {
+      return res.status(500).json({ error: 'Missing GOOGLE_TTS_API_KEY' });
     }
 
-    // OpenAI TTS (tts-1)
-    const r = await fetch('https://api.openai.com/v1/audio/speech', {
+    // Sprawdź cache
+    const cacheKey = generateCacheKey(text, voice_id, voice_settings);
+    const cachedAudio = await getCachedAudio(cacheKey);
+    
+    if (cachedAudio) {
+      console.log('Cache hit:', cacheKey);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('X-Cache', 'HIT');
+      return res.send(cachedAudio);
+    }
+
+    console.log('Cache miss:', cacheKey);
+
+    // Google Cloud TTS
+    const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${process.env.GOOGLE_TTS_API_KEY}`;
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'tts-1',
-        voice,            // 'alloy', 'verse', 'coral', 'sage'...
-        input: text,
-        format            // 'mp3' | 'wav' | 'opus' | 'aac'
+        input: { text },
+        voice: {
+          languageCode: 'pl-PL',
+          name: voice_id
+        },
+        audioConfig: {
+          audioEncoding: 'MP3',
+          effectsProfileId: ['large-home-entertainment-class-device'],
+          speakingRate: voice_settings.speed || 1.0,
+          pitch: voice_settings.pitch || 0,
+          volumeGainDb: voice_settings.volume || 0
+        }
       })
     });
 
-    if (!r.ok) {
-      const msg = await r.text().catch(()=> '');
-      return res.status(502).json({ error: `OpenAI TTS ${r.status}: ${msg}` });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Google TTS error: ${errorText}`);
     }
 
-    // strumień → Buffer
-    const arrayBuf = await r.arrayBuffer();
-    const buf = Buffer.from(arrayBuf);
+    const data = await response.json();
+    const audioContent = Buffer.from(data.audioContent, 'base64');
 
-    const mime =
-      format === 'wav'  ? 'audio/wav'  :
-      format === 'opus' ? 'audio/ogg'  :
-      format === 'aac'  ? 'audio/aac'  : 'audio/mpeg';
+    // Cache the audio data
+    try {
+      await cacheAudio(cacheKey, audioContent);
+      console.log('Cached:', cacheKey);
+    } catch (cacheError) {
+      console.warn('Cache write error:', cacheError);
+      // Continue even if caching fails
+    }
 
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).send(buf);
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('X-Cache', 'MISS');
+    return res.status(200).send(audioContent);
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
