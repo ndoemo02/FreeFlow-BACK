@@ -1,83 +1,54 @@
-import dotenv from 'dotenv';
-import express from 'express';
-import { createServer } from 'http';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+// server.js
+import express from 'express'
+import cors from 'cors'
+import { createServer } from 'node:http'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-// Load environment variables
-dotenv.config();
+// ESM helpers
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const app = express()
+const server = createServer(app)
 
-const app = express();
-const server = createServer(app);
+// --- CORS (whitelist) ---
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'https://freeflow-frontend-chi.vercel.app', // twój front na Vercel
+]
 
-// Middleware
-app.use(express.json());
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
+app.use(cors({
+  origin(origin, cb) {
+    // pozwól bez origin (np. curl/postman) i whitelistę dla przeglądarki
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true)
+    return cb(new Error('Not allowed by CORS'))
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false, // ustaw true TYLKO gdy faktycznie wysyłasz ciasteczka i NIE używasz '*'
+}))
 
-// Load API routes dynamically
-const apiDir = path.join(__dirname, 'api');
-const apiFiles = fs.readdirSync(apiDir).filter(file => file.endsWith('.js'));
+// Obsługa preflight (opcjonalnie, cors middleware zwykle wystarcza)
+app.options('*', cors())
 
-for (const file of apiFiles) {
-  const routeName = path.basename(file, '.js');
-  const modulePath = `./api/${file}`;
-  
-  try {
-    const { default: handler } = await import(modulePath);
-    
-    app.all(`/api/${routeName}`, async (req, res) => {
-      try {
-        await handler(req, res);
-      } catch (error) {
-        console.error(`Error in /api/${routeName}:`, error);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Internal server error' });
-        }
-      }
-    });
-    
-    console.log(`Loaded API route: /api/${routeName}`);
-  } catch (error) {
-    console.error(`Failed to load API route ${routeName}:`, error.message);
-  }
-}
+// --- Body parser ---
+app.use(express.json())
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// --- Przykładowy endpoint, który wcześniej dawał 404 ---
+app.get('/api/places', async (req, res) => {
+  // TODO: wstaw własną logikę / pobranie z DB
+  res.json([
+    { id: 1, name: 'Pizzeria Napoli', city: 'Kraków' },
+    { id: 2, name: 'Sushi Bar', city: 'Warszawa' },
+  ])
+})
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'FreeFlow Backend API',
-    endpoints: apiFiles.map(file => `/api/${path.basename(file, '.js')}`)
-  });
-});
+// --- Healthcheck (przydatne do testów) ---
+app.get('/healthz', (req, res) => res.json({ ok: true }))
 
-// Diagnostyka kluczy API (ostatnie 4 znaki)
-console.log("GMAPS ****" + (process.env.GOOGLE_MAPS_API_KEY||"").slice(-4));
-console.log("OPENAI ****" + (process.env.OPENAI_API_KEY||"").slice(-4));
-
-const PORT = process.env.PORT || 3002;
+// --- Start ---
+const PORT = process.env.PORT || 3001
 server.listen(PORT, () => {
-  console.log(`Backend server running on http://localhost:${PORT}`);
-  console.log('Available endpoints:');
-  apiFiles.forEach(file => {
-    const routeName = path.basename(file, '.js');
-    console.log(`  - /api/${routeName}`);
-  });
-});
+  console.log(`API listening on http://localhost:${PORT}`)
+})
