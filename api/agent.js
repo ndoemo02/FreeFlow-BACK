@@ -9,10 +9,11 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
-    const body = req.method === "POST" ? (req.body || {}) : {};
-    const text = String(body.text || "").trim();
-    const lat  = (typeof body.lat === "number") ? body.lat : null;
-    const lng  = (typeof body.lng === "number") ? body.lng : null;
+    const rawBody = req.method === "POST" ? await resolveRequestBody(req) : {};
+    const body = normalizePayload(rawBody);
+    const text = extractTextValue(body);
+    const lat  = parseCoordinate(body, ["lat", "latitude"]);
+    const lng  = parseCoordinate(body, ["lng", "lon", "longitude"]);
 
     if (!text) {
       return res.status(200).json({ ok:false, error:"NO_TEXT", message:"Brak 'text'." });
@@ -159,4 +160,99 @@ function parseWithout(q){
     .split(/[,\s]+/)
     .map(s=>s.trim())
     .filter(Boolean);
+}
+
+async function resolveRequestBody(req){
+  const contentType = (req.headers['content-type'] || '').toLowerCase();
+
+  if (contentType.includes('application/json')) {
+    return req.body ?? {};
+  }
+
+  if (typeof req.body === 'string' && req.body.trim()) {
+    return req.body.trim();
+  }
+
+  if (req.body && typeof req.body === 'object' && Object.keys(req.body).length) {
+    return req.body;
+  }
+
+  const raw = await readBody(req);
+  if (!raw) return {};
+
+  const text = raw.toString().trim();
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {}
+
+  if (contentType.includes('application/x-www-form-urlencoded') || text.includes('=')) {
+    const params = new URLSearchParams(text);
+    const entries = Object.fromEntries(params);
+    if (Object.keys(entries).length) return entries;
+  }
+
+  return text;
+}
+
+function normalizePayload(value){
+  if (!value) return {};
+  if (typeof value === 'string') {
+    return { text: value };
+  }
+  if (typeof value === 'object') {
+    return value;
+  }
+  return {};
+}
+
+function extractTextValue(body){
+  if (!body || typeof body !== 'object') return '';
+  const fields = ['text', 'prompt', 'query', 'message'];
+  for (const key of fields) {
+    const val = body[key];
+    if (typeof val === 'string' && val.trim()) {
+      return val.trim();
+    }
+  }
+  return '';
+}
+
+function parseCoordinate(body, keys){
+  if (!body || typeof body !== 'object') return null;
+  for (const key of keys) {
+    const candidate = body[key];
+    const num = toNumber(candidate);
+    if (num !== null) return num;
+  }
+
+  if (body.location && typeof body.location === 'object') {
+    for (const key of keys) {
+      const candidate = body.location[key];
+      const num = toNumber(candidate);
+      if (num !== null) return num;
+    }
+  }
+
+  return null;
+}
+
+function toNumber(value){
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const num = Number.parseFloat(value);
+    if (Number.isFinite(num)) return num;
+  }
+  return null;
+}
+
+async function readBody(req){
+  if (req.readableEnded || req.complete) return '';
+  return await new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', chunk => { data += chunk; });
+    req.on('end', () => resolve(data));
+    req.on('error', reject);
+  });
 }
