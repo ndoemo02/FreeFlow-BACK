@@ -141,19 +141,23 @@ export default async function handler(req, res) {
 }
 
 // Funkcja kierowania zamówienia do odpowiedniej restauracji
-async function routeOrderToBusiness({ order_items, customer_location, order_type }) {
+async function routeOrderToBusiness(
+  { order_items, customer_location, order_type },
+  { supabaseClient = supabase } = {}
+) {
   try {
     // 1. Identyfikacja kategorii biznesu na podstawie pozycji zamówienia
     const businessCategory = detectBusinessCategory(order_items);
-    
+
     // 2. Jeśli mamy lokalizację klienta, szukamy najbliższych restauracji
     if (customer_location?.lat && customer_location?.lng) {
       const nearbyBusinesses = await findNearbyBusinesses(
-        customer_location, 
+        customer_location,
         businessCategory,
-        10 // radius w km
+        10, // radius w km
+        { supabaseClient }
       );
-      
+
       if (nearbyBusinesses.length > 0) {
         const closestBusiness = nearbyBusinesses[0];
         return {
@@ -165,13 +169,20 @@ async function routeOrderToBusiness({ order_items, customer_location, order_type
     }
     
     // 3. Fallback - wybierz pierwszą dostępną restaurację danej kategorii
-    const { data: availableBusinesses } = await supabase
-      .from('businesses')
-      .select('id, name')
-      .eq('is_active', true)
-      .eq('is_verified', true)
-      .limit(1);
-    
+    const fallbackQuery = createBusinessQuery(
+      supabaseClient,
+      ['id', 'name'],
+      businessCategory
+    );
+
+    const { data: availableBusinesses, error: fallbackError } = fallbackQuery
+      ? await fallbackQuery.limit(1)
+      : { data: null, error: null };
+
+    if (fallbackError) {
+      console.error('Fallback business fetch error:', fallbackError);
+    }
+
     if (availableBusinesses && availableBusinesses.length > 0) {
       return {
         business_id: availableBusinesses[0].id,
@@ -183,7 +194,7 @@ async function routeOrderToBusiness({ order_items, customer_location, order_type
     // 4. Brak dostępnych restauracji
     return {
       business_id: null,
-      reason: 'no_businesses_available',
+      reason: supabaseClient ? 'no_businesses_available' : 'supabase_client_unavailable',
       distance_km: null
     };
     
@@ -197,29 +208,68 @@ async function routeOrderToBusiness({ order_items, customer_location, order_type
   }
 }
 
+// Reguły dopasowania kategorii biznesu do pozycji zamówienia
+const CATEGORY_KEYWORDS = [
+  {
+    slug: 'pizzeria',
+    patterns: [/pizza/i, /margherita/i, /pepperoni/i, /pizzeria/i]
+  },
+  {
+    slug: 'fast_food',
+    patterns: [/burger/i, /frytki/i, /mcdonalds/i, /burger\s*king/i]
+  },
+  {
+    slug: 'sushi',
+    patterns: [/sushi/i, /maki/i, /sashimi/i, /nigiri/i]
+  },
+  {
+    slug: 'indian',
+    patterns: [/curry/i, /masala/i, /tandoori/i, /paneer/i]
+  }
+];
+
 // Wykrywanie kategorii biznesu na podstawie pozycji zamówienia
-function detectBusinessCategory(order_items) {
-  const itemNames = order_items.map(item => item.name.toLowerCase()).join(' ');
-  
-  if (/pizza|margherita|pepperoni/.test(itemNames)) return 'pizzeria';
-  if (/burger|frytki|mcdonalds|burger king/.test(itemNames)) return 'fast_food';
-  if (/sushi|maki|sashimi/.test(itemNames)) return 'sushi';
-  if (/curry|masala|tandoori/.test(itemNames)) return 'indian';
-  
+function detectBusinessCategory(order_items = []) {
+  const searchableText = order_items
+    .map(item => `${String(item?.name || '')} ${String(item?.description || '')}`.toLowerCase())
+    .join(' ');
+
+  for (const category of CATEGORY_KEYWORDS) {
+    if (category.patterns.some(pattern => pattern.test(searchableText))) {
+      return category.slug;
+    }
+  }
+
   return 'restaurant'; // domyślna kategoria
 }
 
 // Znajdowanie najbliższych restauracji (uproszczona wersja)
-async function findNearbyBusinesses(customer_location, category, radius_km) {
+async function findNearbyBusinesses(
+  customer_location,
+  category,
+  radius_km,
+  { supabaseClient = supabase } = {}
+) {
   // W rzeczywistej implementacji użyłbym PostGIS do wyszukiwania geograficznego
   // Na potrzeby demo używam prostego zapytania
-  
-  const { data: businesses } = await supabase
-    .from('businesses')
-    .select('id, name, city, latitude, longitude')
-    .eq('is_active', true)
-    .eq('is_verified', true);
-  
+
+  const businessQuery = createBusinessQuery(
+    supabaseClient,
+    ['id', 'name', 'city', 'latitude', 'longitude'],
+    category
+  );
+
+  if (!businessQuery) {
+    return [];
+  }
+
+  const { data: businesses, error } = await businessQuery;
+
+  if (error) {
+    console.error('Nearby business fetch error:', error);
+    return [];
+  }
+
   if (!businesses) return [];
   
   // Obliczanie odległości (prosta formuła haversine)
@@ -245,6 +295,47 @@ async function findNearbyBusinesses(customer_location, category, radius_km) {
   return businessesWithDistance;
 }
 
+function createBusinessQuery(client, baseColumns, category) {
+  if (!client) return null;
+
+  const selectColumns = buildBusinessSelectColumns(baseColumns, category);
+  let query = client
+    .from('businesses')
+    .select(selectColumns)
+    .eq('is_active', true)
+    .eq('is_verified', true);
+
+  if (category) {
+    if (isLikelyCategoryId(category)) {
+      query = query.eq('category_id', category);
+    } else {
+      query = query.eq('business_categories.name', category);
+    }
+  }
+
+  return query;
+}
+
+function buildBusinessSelectColumns(baseColumns = [], category) {
+  const columns = new Set((baseColumns || []).map(col => col.trim()).filter(Boolean));
+  columns.add('category_id');
+
+  if (category && !isLikelyCategoryId(category)) {
+    columns.add('business_categories!inner(name)');
+  }
+
+  return Array.from(columns).join(', ');
+}
+
+function isLikelyCategoryId(category) {
+  if (typeof category === 'number') return true;
+  if (typeof category !== 'string') return false;
+
+  if (/^\d+$/.test(category)) return true;
+
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(category);
+}
+
 // Obliczanie odległości między dwoma punktami (formuła haversine)
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // promień Ziemi w km
@@ -261,14 +352,21 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 // Obliczanie szacowanego czasu dostawy
 function calculateEstimatedDelivery(distance_km) {
   if (!distance_km) return null;
-  
+
   // Bazowy czas przygotowania + czas dostawy
   const prep_time_minutes = 30;
   const delivery_time_minutes = Math.max(10, distance_km * 3); // 3 min na km
   const total_minutes = prep_time_minutes + delivery_time_minutes;
-  
+
   const estimated_time = new Date();
   estimated_time.setMinutes(estimated_time.getMinutes() + total_minutes);
-  
+
   return estimated_time.toISOString();
 }
+
+export {
+  routeOrderToBusiness,
+  detectBusinessCategory,
+  findNearbyBusinesses,
+  calculateDistance
+};
