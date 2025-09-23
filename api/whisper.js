@@ -2,7 +2,7 @@
 // Vercel / Node runtime. Przyjmuje audio/webm z przeglądarki i przepuszcza do OpenAI Whisper.
 // Env: OPENAI_API_KEY (ustaw w Vercel → Settings → Environment Variables)
 
-import fetch from 'node-fetch';
+import fetch, { Blob, FormData } from 'node-fetch';
 
 export const config = { api: { bodyParser: false } };
 
